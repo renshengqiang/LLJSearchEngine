@@ -46,20 +46,22 @@ error:
  */
 void IterateAllPages()
 {
-	for(unsigned i = 0; i<domainLocationVec.size(); ++i)
+	int numThreads;
+
+	SYSTEM_INFO info;  
+    GetSystemInfo(&info);  
+    info.dwNumberOfProcessors; 
+	
+	numThreads = info.dwNumberOfProcessors < domainLocationVec.size() ? info.dwNumberOfProcessors : domainLocationVec.size();
+	//cout << "create " << numThreads << " threads\n";
+	
+	HANDLE *threads = new HANDLE[numThreads];
+	for(int i=0; i<numThreads; ++i)
 	{
-		std::vector<TitleUrl> tuVec;
-		Page page = Page("", domainLocationVec[i].domain, domainLocationVec[i].location);
-		
-		if(-1 == page.InitContent() )
-		{
-			cout << domainLocationVec[i].domain + domainLocationVec[i].location << " get content error\n";
-			goto error;
-		}
-		page.GetTitlesAndUrls(tuVec);
-error:
-		result.insert(make_pair(domainLocationVec[i].domain + domainLocationVec[i].location, tuVec));
+		threads[i] = CreateThread(NULL, 0, CalcFunc, NULL, 0, NULL);
 	}
+	WaitForMultipleObjects(numThreads, threads, true, INFINITE);
+	delete[] threads;
 }
 
 /*
