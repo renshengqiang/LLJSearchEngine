@@ -230,34 +230,41 @@ bool IncludeDomain(const string &url)
 
 	return _1 || _2 || _3 || _4;
 }
+
 bool BeginWithSlash(const std::string &url)
 {
 	return url[0] == '/';
 }
+
+/*
+ * 将一个完整的url分解成一个domain和一个location
+ * 分解的思路是找到url中最后一个cn,net,com,gov等
+ * FIXME:这种简单的处理有bug，因为可能会出现后面的location中会出现cn,net,com,gov等
+ */
 void SplitUrl(const string &url, string &domain, string &location)
 {
 	string::size_type pos;
-	if(url.find("cn") != string::npos)
+	if(url.rfind("cn") != string::npos)
 	{
-		pos = url.find("cn");
+		pos = url.rfind("cn");
 		domain = string(url, 0, pos+2);
 		location = string(url, pos+2, url.length()-pos-2);
 	}
-	else if(url.find("net") != string::npos)
+	else if(url.rfind("net") != string::npos)
 	{
-		pos = url.find("net");
+		pos = url.rfind("net");
 		domain = string(url, 0, pos+3);
 		location = string(url, pos+3, url.length()-pos-3);
 	}
-	else if(url.find("com") != string::npos)
+	else if(url.rfind("com") != string::npos)
 	{
-		pos = url.find("com");
+		pos = url.rfind("com");
 		domain = string(url, 0, pos+3);
 		location = string(url, pos+3, url.length()-pos-3);
 	}
-	else if(url.find("gov") != string::npos)
+	else if(url.rfind("gov") != string::npos)
 	{
-		pos = url.find("gov");
+		pos = url.rfind("gov");
 		domain = string(url, 0, pos+3);
 		location = string(url, pos+3, url.length()-pos-3);
 	}
@@ -265,8 +272,18 @@ void SplitUrl(const string &url, string &domain, string &location)
 		location = string(1, '/');
 }
 
+void SplitUrlsVec(const std::vector<std::string> &urlVec, std::vector<DomainLocation> &domainLocationVec)
+{
+	for(unsigned i = 0; i<urlVec.size(); ++i)
+	{
+		std::string domain, location;
+		SplitUrl(urlVec[i], domain, location);
+		domainLocationVec.push_back(DomainLocation(domain, location));
+	}
+}
+
 #include <fstream>
-void ReadUrlsFromFile(std::set<std::string> &urlSet, const std::string &filename)
+void ReadUrlsFromFile(std::vector<std::string> &urlVec, const std::string &filename)
 {
 	ifstream file = ifstream(filename.c_str());
 	string line;
@@ -275,29 +292,96 @@ void ReadUrlsFromFile(std::set<std::string> &urlSet, const std::string &filename
 	{
 		while(getline(file, line))
 		{
-			urlSet.insert(line);
+			urlVec.push_back(line);
 		}
 		file.close();
 	}
-	
 	return;
 }
 
-void WriteUrlsToFile(const std::vector<PageInfo> &pageVec, const std::string &filename)
+void ReadPagesUrlsFromFile(std::map<std::string, std::set<std::string> > &result, const std::string &filename)
 {
-	ofstream file = ofstream(filename.c_str(), ios::app);
-	int num = pageVec.size();
+	ifstream file = ifstream(filename.c_str());
+	std::string temp;
+	if(!file) return;
+
+	unsigned num;
+
+	file >> num;
+	getline(file, temp);
+	for(unsigned i=0; i<num; ++i)
+	{
+		std::string url;
+		getline(file, url);
+
+		unsigned innNum;
+		std::set<string> tuSet;
+		file >> innNum;
+		getline(file, temp);
+		for(unsigned j=0; j<innNum; ++j)
+		{
+			std::string innUrl;
+			getline(file, innUrl);
+			tuSet.insert(innUrl);
+		}
+		result.insert(make_pair(url, tuSet));
+	}
+	file.close();
+}
+
+void WritePagesUrlsToFile(const std::map<std::string, std::vector<TitleUrl> > &result, const std::string &filename)
+{
+	ofstream file = ofstream(filename.c_str());
+	int num = result.size();
+
+	file << num << "\n";
 	if(file)
 	{
 		file.clear();
-		for(vector<PageInfo>::const_iterator it = pageVec.begin(); it != pageVec.end(); ++it)
+		for(std::map<std::string, std::vector<TitleUrl> >::const_iterator it = result.begin();
+			it != result.end(); ++it)
 		{
-			string url = it->domain + it->url;
-			file.write(url.c_str(), url.length());
-			file.write("\n", 1);
+			file << it->first << "\n" << it->second.size() << "\n";
+			for(unsigned i=0; i<it->second.size(); ++i)
+			{
+				file << it->second[i].url << "\n";
+			}
 		}
 		file.close();
 	}
 
 	return;
+}
+
+void CompareResult(map<string, set<string> > &preResult,
+				   map<string, vector<TitleUrl> > &thisResult,
+				   vector<TitleUrl> &compResult)
+{
+	for(std::map<std::string, std::vector<TitleUrl> >::iterator thisIter = thisResult.begin();
+		thisIter != thisResult.end();
+		++thisIter)
+	{
+		map<string, set<string> >::iterator preIter = preResult.find(thisIter->first);
+		if(preIter != preResult.end()) // 遍历每个url，看是否有更新的
+		{
+			for(std::vector<TitleUrl>::iterator innIter = thisIter->second.begin();
+				innIter != thisIter->second.end();
+				++innIter)
+			{
+				if(preIter->second.find(innIter->url) == preIter->second.end())	// 未找到则插入
+				{
+					compResult.push_back(TitleUrl(innIter->title, innIter->url));
+				}
+			}
+		}
+		else   // 没有找到对应的主页url
+		{
+			for(std::vector<TitleUrl>::iterator innIter = thisIter->second.begin();
+				innIter != thisIter->second.end();
+				++innIter)
+			{
+				compResult.push_back(TitleUrl(innIter->title, innIter->url));
+			}
+		}
+	}
 }

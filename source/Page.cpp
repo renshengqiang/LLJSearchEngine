@@ -44,12 +44,13 @@ int Page::InitContent()
 
 	while(true)
 	{
+		memset(receiveBuf, 0, 4096);
 		if(recv(clientSocket, receiveBuf, 4096, 0) < 1)
 			break;
-		string temp = receiveBuf;
-		if(temp.length() > 4096)
-			temp = temp.substr(0, 4096);
-		tempContent += temp;
+		//string temp = receiveBuf;
+		//if(temp.length() > 4096)
+		//	temp = temp.substr(0, 4096);
+		tempContent += receiveBuf;
 	}
 
 	char *ansiStr;
@@ -73,20 +74,17 @@ int Page::InitContent()
 	return 0;
 }
 
-#include <stdio.h>
+#include <fstream>
 int Page::WriteToFile(const string &fileName)
 {
-	FILE *fp = fopen(fileName.c_str(), "w");
-	if(NULL == fp)
-	{
-		return -1;
-	}
-	fprintf(fp, "%s", mContent.c_str());
-	fclose(fp);
+	ofstream file = ofstream(fileName.c_str());
+	if(!file) return -1;
+	file << mContent;
+	file.close();
 	return 0;
 }
 
-void Page::GetTitlesAndUrls(vector<PageInfo> &tuVec)
+void Page::GetTitlesAndUrls(vector<TitleUrl> &tuVec)
 {
 	string::size_type lastHrefPos = 0;
 
@@ -113,17 +111,18 @@ void Page::GetTitlesAndUrls(vector<PageInfo> &tuVec)
 				// 如果包含了domain,则进行分割处理；否则直接使用当前的domain作为下面网页的domain
 				if(IncludeDomain(url))
 				{
-					string domain,location;
-					SplitUrl(url, domain, location);
-					tuVec.push_back(PageInfo(title, domain, location));
+					tuVec.push_back(TitleUrl(title, url));
 				}
 				else
 				{
 					if(!BeginWithSlash(url))
 					{
-						url = string(1, '/') + url;
+						tuVec.push_back(TitleUrl(title, mDomain + "/" + url));
 					}
-					tuVec.push_back(PageInfo(title, mDomain, url));
+					else
+					{
+						tuVec.push_back(TitleUrl(title, mDomain + url));
+					}
 				}
 			}
 		}

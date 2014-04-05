@@ -13,6 +13,24 @@ struct PageInfo
 	{}
 };
 
+struct TitleUrl
+{
+	std::string title;
+	std::string url;
+	TitleUrl(const std::string &_title, const std::string &_url):
+		title(_title), url(_url)
+	{}
+};
+
+struct DomainLocation
+{
+	std::string domain;
+	std::string location;
+	DomainLocation(const std::string &_domain, const std::string &_location):
+		domain(_domain), location(_location)
+	{}
+};
+
 class Page
 {
 public:
@@ -36,7 +54,7 @@ public:
 
 	/* iterare the file and look for urls in the page
 	*/
-	void GetTitlesAndUrls(std::vector<PageInfo> &tuVec);
+	void GetTitlesAndUrls(std::vector<TitleUrl> &tuVec);
 
 private:
 	std::string mTitle;		// อ๘าณฑ๊ฬโ

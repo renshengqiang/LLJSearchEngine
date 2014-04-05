@@ -2,6 +2,7 @@
 #define _RAPTILE_ENCODING_H_
 #include <string>
 #include <vector>
+#include <map>
 #include <set>
 #include "Page.h"
 // 编码处理
@@ -20,12 +21,24 @@ enum CodeType
 CodeType GetType(const std::string &str);
 
 // 字符串处理函数
-bool IncludeDomain(const std::string &url);		// 是否是以域名开头的字符串
-bool BeginWithSlash(const std::string &url);	// 是否以斜杠开头的字符串
-void SplitUrl(const std::string &url, std::string &domain, std::string &location);// 分割字符串
-
+// 是否是以域名开头的字符串
+bool IncludeDomain(const std::string &url);		
+// 是否以斜杠开头的字符串
+bool BeginWithSlash(const std::string &url);	
+// 将一个url分解成domain加上一个location,例如www.hust.edu.cn分解成 hust.edu.cn 和 /
+void SplitUrl(const std::string &url, std::string &domain, std::string &location); 
+// 将从文件中得到的url向量分解成domain和location向量
+void SplitUrlsVec(const std::vector<std::string> &urlVec, std::vector<DomainLocation> &domainLocationVec);
 
 // 文件处理
-void ReadUrlsFromFile(std::set<std::string> &urlSet, const std::string &filename);
-void WriteUrlsToFile(const std::vector<PageInfo> &pageVec, const std::string &filename);
+// 从文件中读取需要处理的urls集合
+void ReadUrlsFromFile(std::vector<std::string> &urlVec, const std::string &filename);
+// 从文件中将上次读取的结果提取出来
+void ReadPagesUrlsFromFile(std::map<std::string, std::set<std::string> > &result, const std::string &filename);
+// 将本次处理的结果保存在文件中
+void WritePagesUrlsToFile(const std::map<std::string, std::vector<TitleUrl> > &result, const std::string &filename);
+// 将上次的结果和本次的结果进行比较，结果保存到一个vector中
+void CompareResult(std::map<std::string, std::set<std::string> > &preResult,
+							  std::map<std::string, std::vector<TitleUrl> > &thisResult,
+							  std::vector<TitleUrl> &compResult);
 #endif

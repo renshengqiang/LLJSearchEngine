@@ -1,128 +1,99 @@
 #include <iostream>
-#include <set>
 #include <process.h>
 #include "Connection.h"
 #include "Page.h"
 #include "Utils.h"
 
 #pragma comment(lib,"ws2_32.lib")
-
 using namespace std;
 
-// 多线程共享使用的数据结构
-int nextPageIndex = 0;
-vector<PageInfo> pageVec;
-set<string> visitSet;
-CRITICAL_SECTION nextPageCS, pageVecCS, visitSetCS;
-const int threadNum = 10;
+int nextPageIndex;
+map<string, vector<TitleUrl> > result;
+CRITICAL_SECTION nextPageCS, resultCS;
+std::vector<DomainLocation> domainLocationVec;
 
 DWORD WINAPI CalcFunc(LPVOID lpParameter)
 {
-	int nextIndex, allSize;
+	int nextIndex;
 
 	do
 	{
 		EnterCriticalSection(&nextPageCS);
-		EnterCriticalSection(&pageVecCS);
 		nextIndex = nextPageIndex;
-		allSize = pageVec.size();
 		nextPageIndex++;
-		LeaveCriticalSection(&pageVecCS);
 		LeaveCriticalSection(&nextPageCS);
 
-		if(nextIndex >= allSize) break;
-
-		Page page = Page(pageVec[nextIndex].title, pageVec[nextIndex].domain, pageVec[nextIndex].url);
-
-		if(page.InitContent() == -1)
+		if(nextPageIndex > domainLocationVec.size() - 1) return 0;
+		std::vector<TitleUrl> tuVec;
+		Page page = Page("", domainLocationVec[nextIndex].domain, domainLocationVec[nextIndex].location);
+		
+		if(-1 == page.InitContent() )
 		{
-			continue;
+			cout << domainLocationVec[nextIndex].domain + domainLocationVec[nextIndex].location << " get content error\n";
+			goto error;
 		}
+		page.GetTitlesAndUrls(tuVec);
 
-		vector<PageInfo> tempVec;
-		page.GetTitlesAndUrls(tempVec);
-
-		for(vector<PageInfo>::iterator it = tempVec.begin(); it != tempVec.end(); ++it)
-		{
-			if(it->title.find("聘") != string::npos)
-			{
-				int count;
-				EnterCriticalSection(&visitSetCS);
-				count = visitSet.count(it->domain + it->url);
-				LeaveCriticalSection(&visitSetCS);
-
-				if( count == 0)
-				{
-					EnterCriticalSection(&visitSetCS);
-					visitSet.insert(it->domain + it->url);
-					LeaveCriticalSection(&visitSetCS);
-
-					EnterCriticalSection(&pageVecCS);
-					pageVec.push_back(*it);
-					LeaveCriticalSection(&pageVecCS);
-				}
-			}
-		}
-
-		//cout << page.GetTitle() << endl;
-		//cout << pageVec.size() << endl;
+error:
+		EnterCriticalSection(&resultCS);
+		result.insert(make_pair(domainLocationVec[nextIndex].domain + domainLocationVec[nextIndex].location, tuVec));
+		LeaveCriticalSection(&resultCS);
 	}while(true);
-
-	return 0;
 }
-void BFS(const string &title, const string &domain, const string &url)
-{
-	pageVec.push_back(PageInfo(title, domain, url));
-	visitSet.insert(domain+url);
-
-	InitializeCriticalSection(&nextPageCS);
-	InitializeCriticalSection(&pageVecCS);
-	InitializeCriticalSection(&visitSetCS);
-
-	while(nextPageIndex < pageVec.size() && pageVec.size() < threadNum)
-	{
-		Page page = Page(pageVec[nextPageIndex].title, pageVec[nextPageIndex].domain, pageVec[nextPageIndex].url);
-
-		if(page.InitContent() == -1)
-		{
-			++nextPageIndex;
-			cout << "error\n";
-			continue;
-		}
-
-		vector<PageInfo> tempVec;
-		page.GetTitlesAndUrls(tempVec);
-
-		int tempSize = tempVec.size();
-		for(vector<PageInfo>::iterator it = tempVec.begin(); it != tempVec.end(); ++it)
-		{
-			if(it->title.find("聘") != string::npos)
-			{
-				if(visitSet.count(it->domain + it->url) == 0)
-				{
-					visitSet.insert(it->domain + it->url);
-					pageVec.push_back(*it);
-				}
-			}
-		}
-
-		++nextPageIndex;
-		//cout << page.GetTitle() << endl;
-		//cout << pageVec.size() << endl;
-	}
-
-	HANDLE threads[threadNum];
-	for(int i=0; i<threadNum; ++i)
-	{
-		threads[i] = CreateThread(NULL, 0, CalcFunc, NULL, 0, NULL);
-	}
-	WaitForMultipleObjects(threadNum, threads, true, INFINITE);
 /*
-	for(vector<PageInfo>::iterator it = pageVec.begin(); it != pageVec.end(); ++it)
+ * 对给定的网页进行遍历，得到每个网页中的链接
+ * 返回的结果保存在一个vector中，每个网页内容中的链接保存在一个子vector中,在map中使用
+ */
+void IterateAllPages()
+{
+	for(unsigned i = 0; i<domainLocationVec.size(); ++i)
 	{
-		cout << it-pageVec.begin() << " " << it->title << " : " << it->domain << it->url << endl;
+		std::vector<TitleUrl> tuVec;
+		Page page = Page("", domainLocationVec[i].domain, domainLocationVec[i].location);
+		
+		if(-1 == page.InitContent() )
+		{
+			cout << domainLocationVec[i].domain + domainLocationVec[i].location << " get content error\n";
+			goto error;
+		}
+		page.GetTitlesAndUrls(tuVec);
+error:
+		result.insert(make_pair(domainLocationVec[i].domain + domainLocationVec[i].location, tuVec));
 	}
-*/
+}
+
+/*
+ * 请求处理函数，处理过程如下：
+ * 1. 从文件in.txt中获得需要查询的网站url
+ * 2. 从文件out.txt中获得上次查询的结果
+ * 3. 调用IterateAllPages对所有的页面进行查询，得到本次查询的结果
+ * 4. 对上次的查询结果和这次查询的结果进行比较，比较的结果存放在compResult中
+ */
+void ProcessRequest(vector<TitleUrl> &compResult)
+{
+	// 为多线程做准备
+	nextPageIndex = 0;
+	result.clear();
+	domainLocationVec.clear();
+
+	// 从文件中取得上次处理结果
+	map<string, set<string> > preResult;
+	ReadPagesUrlsFromFile(preResult, "out.txt");
+
+	// 从文件中读取需要处理的url集合
+	std::vector<std::string> urlVec;
+	ReadUrlsFromFile(urlVec, "in.txt");
+	SplitUrlsVec(urlVec, domainLocationVec);
+
+	// 对需要处理的url进行处理
+	IterateAllPages();
+
+	if(result.size() > 0)		// 防止网络不通的情况存在，此时不应该写入到out.txt
+	{
+		WritePagesUrlsToFile(result, "out.txt");
+	}
+
+	CompareResult(preResult, result, compResult);
 }
 
 int main()
@@ -131,53 +102,24 @@ int main()
 	{
 		cout << "Init Net Environment fail\n";
 		return -1;
-	}	
-/*
-	Page hustPage = Page("hust", "http://www.hust.edu.cn", "/");
-
-	if(hustPage.InitContent() == -1)
-	{
-		cout << "Get content error\n";
-		return -1;
 	}
-	if(hustPage.WriteToFile("hust.txt") == -1)
+	InitializeCriticalSection(&nextPageCS);
+	InitializeCriticalSection(&resultCS);
+	vector<TitleUrl> compResult;
+	ProcessRequest(compResult);
+
+//  /*
+	cout << compResult.size() << endl;
+	for(unsigned i=0; i<compResult.size(); ++i)
 	{
-		cout << "Write to file error\n";
-		return -1;
+		cout << compResult[i].title << " " << compResult[i].url << endl;
 	}
+//  */
 
-	// analysis the titles and urls in the page content
-	vector<PageInfo> tuVec;
-	hustPage.GetTitlesAndUrls(tuVec);
-
-	for(vector<PageInfo>::iterator it = tuVec.begin(); it != tuVec.end(); ++it)
-	{
-		if(it->title.find("聘") != string::npos)
-			cout << it->title << " : " << it->domain << it->url << endl;
-	}
-
-	char i;
-	cin >> i;
-*/
-
-	//BFS("华中科技大学", "employment.hust.edu.cn", "/");
-	BFS("华中师范大学", "renshi.ccnu.edu.cn", "/");
-
-	//int num = pageVec.size();
-	set<string> urlSet;
-	ReadUrlsFromFile(urlSet, "result.txt");
-	WriteUrlsToFile(pageVec, "result.txt");
-
-	for(vector<PageInfo>::iterator it = pageVec.begin(); it != pageVec.end(); ++it)
-	{
-		string url = it->domain + it->url;
-		if(urlSet.count(url) == 0)
-			cout << it-pageVec.begin() << " " << it->title << " : " << it->domain << it->url << endl;
-	}
-
-	char i;
-	cin >> i;
-
+//	/*
+	char ch;
+	cin >> ch;
+//	*/
 
 	CleanUpNetEnvironment();
     return 0;
