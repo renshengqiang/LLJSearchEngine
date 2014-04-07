@@ -55,32 +55,6 @@ WCHAR *gbk_to_unicode(const char *u_str)
 	return w_str;
 }
 
-WCHAR *gb2312_to_unicode(const char *u_str)
-{
-	int w_len, len;
-	WCHAR *w_str;
-
-	w_len = MultiByteToWideChar(CP_ACP, 0, u_str, -1, NULL, 0);
-	if (w_len <= 0)
-		return NULL;
-	w_str = (WCHAR *)malloc(w_len * sizeof(WCHAR)) ;
-	if (w_str == NULL) {
-		printf("error: no memory!\n");
-		return NULL;
-	}
-	len = MultiByteToWideChar(CP_ACP, 0, u_str, -1, w_str, w_len);
-	
-	if (len < 0) 
-	{
-		free(w_str);
-		return NULL;
-	} 
-	else if (len < w_len)
-		w_str[len] = 0;
-	
-	return w_str;
-}
-
 char *unicode_to_utf8(const WCHAR *w_str)
 {
 	int u_len, len;
@@ -173,13 +147,6 @@ char *gbk_to_ansi(const char *u_str)
 	free(w_str);
 	return a_str;
 }
-char *gb2312_to_ansi(const char *u_str)
-{
-	WCHAR *w_str = gb2312_to_unicode(u_str);
-	char *a_str = unicode_to_ansi(w_str);
-	free(w_str);
-	return a_str;
-}
 
 char *ansi_to_utf8(const char *a_str)
 {
@@ -209,11 +176,11 @@ CodeType GetType(const std::string &str)
 	{
 		std::string typeStr(str.c_str()+pos+8, 10);
 		
-		if(typeStr.find("gb2312") == 0)
+		if(typeStr.find("gb2312") == 0 || typeStr.find("GB2312") == 0)
 			return GB2312;
-		else if(typeStr.find("gbk") == 0)
+		else if(typeStr.find("gbk") == 0 || typeStr.find("GBK") == 0)
 			return GBK;
-		else if(typeStr.find("utf-8") == 0)
+		else if(typeStr.find("utf-8") == 0 || typeStr.find("UTF-8") == 0)
 			return UTF8;
 	}
 	return UTF8;
@@ -223,12 +190,13 @@ using namespace std;
 // 字符串处理函数
 bool IncludeDomain(const string &url)
 {
-	bool _1 = url.find("cn") != string::npos;
-	bool _2 = url.find("net") != string::npos;
-	bool _3 = url.find("com") != string::npos;
-	bool _4 = url.find("gov") != string::npos;
+	bool _1 = url.find(".cn") != string::npos;
+	bool _2 = url.find(".net") != string::npos;
+	bool _3 = url.find(".com") != string::npos;
+	bool _4 = url.find(".gov") != string::npos;
+	bool _5 = url.find(".cc") !=  string::npos;
 
-	return _1 || _2 || _3 || _4;
+	return _1 || _2 || _3 || _4 || _5;
 }
 
 bool BeginWithSlash(const std::string &url)
@@ -238,38 +206,34 @@ bool BeginWithSlash(const std::string &url)
 
 /*
  * 将一个完整的url分解成一个domain和一个location
- * 分解的思路是找到url中最后一个cn,net,com,gov等
- * FIXME:这种简单的处理有bug，因为可能会出现后面的location中会出现cn,net,com,gov等
+ * 将前面的http去除，查找第一个/的位置
  */
-void SplitUrl(const string &url, string &domain, string &location)
+void SplitUrl(const string &_url, string &domain, string &location)
 {
+	// 去除前面的http或者https前缀
+	string url = _url;
+	if(url.find("https") == 0)
+	{
+		url = string(url, 8, url.length() - 8);
+	}
+	else if(url.find("http") == 0)
+	{
+		url = string(url, 7, url.length() - 7);
+	}
+
+	// 查找第一个斜杠的位置
 	string::size_type pos;
-	if(url.rfind("cn") != string::npos)
+	pos = url.find("/");
+	if(pos != url.npos)
 	{
-		pos = url.rfind("cn");
-		domain = string(url, 0, pos+2);
-		location = string(url, pos+2, url.length()-pos-2);
+		domain = string(url, 0, pos);
+		location = string(url, pos, url.length()-pos);
 	}
-	else if(url.rfind("net") != string::npos)
+	else
 	{
-		pos = url.rfind("net");
-		domain = string(url, 0, pos+3);
-		location = string(url, pos+3, url.length()-pos-3);
+		domain = url;
+		location = "/";
 	}
-	else if(url.rfind("com") != string::npos)
-	{
-		pos = url.rfind("com");
-		domain = string(url, 0, pos+3);
-		location = string(url, pos+3, url.length()-pos-3);
-	}
-	else if(url.rfind("gov") != string::npos)
-	{
-		pos = url.rfind("gov");
-		domain = string(url, 0, pos+3);
-		location = string(url, pos+3, url.length()-pos-3);
-	}
-	if(location == string(""))
-		location = string(1, '/');
 }
 
 void SplitUrlsVec(const std::vector<std::string> &urlVec, std::vector<DomainLocation> &domainLocationVec)
@@ -281,6 +245,38 @@ void SplitUrlsVec(const std::vector<std::string> &urlVec, std::vector<DomainLoca
 		domainLocationVec.push_back(DomainLocation(domain, location));
 	}
 }
+
+void ExcludingIllegalCharacters(string &str)
+{
+	int firstIllegalPos = 0, secondIllegalPos;
+
+	while(firstIllegalPos < str.length() && 
+		str[firstIllegalPos]>31 && str[firstIllegalPos]<127)
+	{
+		firstIllegalPos++;
+	}
+	if(firstIllegalPos == str.length()) return;
+
+	secondIllegalPos = firstIllegalPos;
+	while(secondIllegalPos < str.length() &&
+		(str[secondIllegalPos]>126 || str[secondIllegalPos]<32))
+	{
+		secondIllegalPos++;
+	}
+
+	string firstPart, secondPart;
+	if(firstIllegalPos > 0)
+	{
+		firstPart = string(str, 0, firstIllegalPos);
+	}
+	if(secondIllegalPos < str.length())
+	{
+		secondPart = string(str, secondIllegalPos, str.length() - secondIllegalPos);
+	}
+	str = firstPart+secondPart;
+	return;
+}
+
 
 #include <fstream>
 void ReadUrlsFromFile(std::vector<std::string> &urlVec, const std::string &filename)
@@ -384,4 +380,27 @@ void CompareResult(map<string, set<string> > &preResult,
 			}
 		}
 	}
+}
+
+void WriteCompareResultToHtmlDocument(const std::vector<TitleUrl> &compResult, const std::string &fileName)
+{
+	ofstream file = ofstream(fileName.c_str());
+
+	if(!file) return;
+
+	file << "<html>\n";
+	file << "<body>\n";
+	for(unsigned i = 0; i < compResult.size(); ++i)
+	{
+		file << "<a href=\"http://" 
+			 << compResult[i].url
+			 << "\" target=\"_blank\">"
+			 << compResult[i].title
+			 << "</a>";
+		file << "<p></p>\n";
+	}
+	file << "</body>\n";
+	file << "</html>";
+
+	file.close();
 }

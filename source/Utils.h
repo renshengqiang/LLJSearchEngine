@@ -8,7 +8,6 @@
 // 编码处理
 char *utf8_to_ansi(const char *u_str);
 char *gbk_to_ansi(const char *u_str);
-char *gb2312_to_ansi(const char *u_str);
 
 // 网页编码类型
 enum CodeType
@@ -29,6 +28,8 @@ bool BeginWithSlash(const std::string &url);
 void SplitUrl(const std::string &url, std::string &domain, std::string &location); 
 // 将从文件中得到的url向量分解成domain和location向量
 void SplitUrlsVec(const std::vector<std::string> &urlVec, std::vector<DomainLocation> &domainLocationVec);
+// 去除字符串中的非法字符
+void ExcludingIllegalCharacters(std::string &str);
 
 // 文件处理
 // 从文件中读取需要处理的urls集合
@@ -41,4 +42,7 @@ void WritePagesUrlsToFile(const std::map<std::string, std::vector<TitleUrl> > &r
 void CompareResult(std::map<std::string, std::set<std::string> > &preResult,
 							  std::map<std::string, std::vector<TitleUrl> > &thisResult,
 							  std::vector<TitleUrl> &compResult);
+// 将比较的结果保存到一个文档中，写入按照html文档的格式进行编写
+void WriteCompareResultToHtmlDocument(const std::vector<TitleUrl> &compResult, const std::string &fileName);
+
 #endif

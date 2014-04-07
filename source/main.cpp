@@ -23,7 +23,7 @@ DWORD WINAPI CalcFunc(LPVOID lpParameter)
 		nextPageIndex++;
 		LeaveCriticalSection(&nextPageCS);
 
-		if(nextPageIndex > domainLocationVec.size() - 1) return 0;
+		if(nextIndex > domainLocationVec.size()-1) return 0;
 		std::vector<TitleUrl> tuVec;
 		Page page = Page("", domainLocationVec[nextIndex].domain, domainLocationVec[nextIndex].location);
 		
@@ -33,6 +33,8 @@ DWORD WINAPI CalcFunc(LPVOID lpParameter)
 			goto error;
 		}
 		page.GetTitlesAndUrls(tuVec);
+
+		page.WriteToFile("hz.txt");
 
 error:
 		EnterCriticalSection(&resultCS);
@@ -53,7 +55,7 @@ void IterateAllPages()
     info.dwNumberOfProcessors; 
 	
 	numThreads = info.dwNumberOfProcessors < domainLocationVec.size() ? info.dwNumberOfProcessors : domainLocationVec.size();
-	//cout << "create " << numThreads << " threads\n";
+//	cout << "create " << numThreads << " threads\n";
 	
 	HANDLE *threads = new HANDLE[numThreads];
 	for(int i=0; i<numThreads; ++i)
@@ -107,21 +109,24 @@ int main()
 	}
 	InitializeCriticalSection(&nextPageCS);
 	InitializeCriticalSection(&resultCS);
+
+
 	vector<TitleUrl> compResult;
 	ProcessRequest(compResult);
+	WriteCompareResultToHtmlDocument(compResult, "result.html");
 
-//  /*
+  /*
 	cout << compResult.size() << endl;
 	for(unsigned i=0; i<compResult.size(); ++i)
 	{
 		cout << compResult[i].title << " " << compResult[i].url << endl;
 	}
-//  */
+  */
 
-//	/*
+	/*
 	char ch;
 	cin >> ch;
-//	*/
+	*/
 
 	CleanUpNetEnvironment();
     return 0;
